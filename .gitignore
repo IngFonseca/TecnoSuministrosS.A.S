@@ -1,0 +1,23 @@
+# Variables de entorno y credenciales
+.env
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Archivos generados por Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE
+.vscode/
+.idea/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Reportes generados
+reports/*.pdf
