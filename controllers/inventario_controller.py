@@ -1,9 +1,6 @@
-"""
-CONTROLADOR – Inventario
-Responsabilidad: lógica de negocio para productos, categorías y movimientos de stock.
-"""
-from models.producto_model import ProductoModel, CategoriaModel, MovimientoModel
+from models.producto_model import ProductoModel, CategoriaModel
 from utils import logger
+from utils.api_client import ApiError
 from utils.pdf_generator import reporte_inventario
 
 
@@ -22,11 +19,9 @@ class InventarioController:
             return False, "El nombre de la categoría es obligatorio."
         try:
             CategoriaModel.create(nombre)
-            logger.log(usuario["id"], usuario["nombre_completo"],
-                       f"Creó categoría: {nombre}", "Inventario")
             return True, "Categoría creada."
-        except Exception as e:
-            return False, f"Error al crear categoría: {e}"
+        except ApiError as e:
+            return False, e.detail
 
     # ── Productos ─────────────────────────────────────────────────────────────
 
@@ -52,14 +47,10 @@ class InventarioController:
         except ValueError:
             return False, "Cantidad y precio deben ser números positivos."
 
-        codigo = ProductoModel.create(nombre, cantidad, precio, categoria_id, proveedor_id)
-        # Registrar movimiento de entrada inicial
-        prod = ProductoModel.get_all(buscar=nombre)
-        prod_id = next((p["id"] for p in prod if p["codigo"] == codigo), None)
-        if prod_id and cantidad > 0:
-            MovimientoModel.create(prod_id, nombre, "entrada", cantidad, "Stock inicial", usuario["id"])
-        logger.log(usuario["id"], usuario["nombre_completo"],
-                   f"Registró producto: {codigo} – {nombre}", "Inventario")
+        try:
+            codigo = ProductoModel.create(nombre, cantidad, precio, categoria_id, proveedor_id)
+        except ApiError as e:
+            return False, e.detail
         return True, f"Producto {codigo} registrado."
 
     @staticmethod
@@ -74,16 +65,15 @@ class InventarioController:
         except ValueError:
             return False, "Cantidad y precio deben ser números válidos."
 
-        ProductoModel.update(producto_id, nombre, cantidad, precio, categoria_id, proveedor_id)
-        logger.log(usuario["id"], usuario["nombre_completo"],
-                   f"Editó producto: {nombre}", "Inventario")
+        try:
+            ProductoModel.update(producto_id, nombre, cantidad, precio, categoria_id, proveedor_id)
+        except ApiError as e:
+            return False, e.detail
         return True, "Producto actualizado."
 
     @staticmethod
     def eliminar(producto_id: int, nombre: str, usuario: dict) -> None:
         ProductoModel.delete(producto_id)
-        logger.log(usuario["id"], usuario["nombre_completo"],
-                   f"Eliminó producto: {nombre}", "Inventario")
 
     # ── Movimientos de stock ──────────────────────────────────────────────────
 
@@ -98,19 +88,10 @@ class InventarioController:
         except ValueError:
             return False, "Ingresa una cantidad válida (entero positivo)."
 
-        stock_actual = ProductoModel.get_stock(producto_id)
-        prod = ProductoModel.get_by_id(producto_id)
-        nombre = prod["nombre"] if prod else ""
-
-        if tipo == "salida" and cantidad > stock_actual:
-            return False, f"Stock insuficiente. Disponible: {stock_actual}"
-
-        delta = cantidad if tipo == "entrada" else -cantidad
-        ProductoModel.update_stock(producto_id, delta)
-        MovimientoModel.create(producto_id, nombre, tipo,
-                               cantidad, motivo or tipo.capitalize(), usuario["id"])
-        logger.log(usuario["id"], usuario["nombre_completo"],
-                   f"{tipo.capitalize()} de {cantidad} uds – {nombre}", "Inventario")
+        try:
+            ProductoModel.registrar_movimiento(producto_id, tipo, cantidad, motivo)
+        except ApiError as e:
+            return False, e.detail
         return True, "Movimiento registrado."
 
     # ── Reporte ───────────────────────────────────────────────────────────────

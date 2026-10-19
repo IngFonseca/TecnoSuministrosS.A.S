@@ -21,3 +21,10 @@ Thumbs.db
 
 # Reportes generados
 reports/*.pdf
+
+# Empaquetado y archivos locales
+build/
+dist/
+*.spec
+*.sql
+api_url.txt

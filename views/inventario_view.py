@@ -185,14 +185,14 @@ class ProductoFormView(tk.Toplevel):
             self.e_nombre.insert(0, self.producto["nombre"])
             self.e_cant.insert(0,   self.producto["cantidad"])
             self.e_precio.insert(0, self.producto["precio"])
-            from utils.db import execute_query
-            cat_r  = execute_query("SELECT nombre FROM categorias WHERE id=%s",
-                                   (self.producto["categoria_id"],), fetch=True)
-            prov_r = execute_query("SELECT nombre FROM proveedores WHERE id=%s",
-                                   (self.producto["proveedor_id"],), fetch=True)
-            if cat_r:  self.cb_cat.set(cat_r[0]["nombre"])
-            if prov_r: self.cb_prov.set(prov_r[0]["nombre"])
-            else:      self.cb_prov.set("(ninguno)")
+            # Nombres a partir de los mapas ya cargados desde la API
+            cat_name  = next((n for n, i in self._cat_map.items()
+                              if i == self.producto["categoria_id"]), None)
+            prov_name = next((n for n, i in self._prov_map.items()
+                              if i == self.producto["proveedor_id"]), None)
+            if cat_name:
+                self.cb_cat.set(cat_name)
+            self.cb_prov.set(prov_name or "(ninguno)")
 
         self.lbl_err = tk.Label(self, text="", font=FONT_SMALL, bg=FONDO, fg=PELIGRO)
         self.lbl_err.pack()

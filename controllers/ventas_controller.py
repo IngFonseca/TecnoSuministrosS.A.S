@@ -2,10 +2,10 @@
 CONTROLADOR – Ventas
 Responsabilidad: lógica de carrito, cálculo de totales, registro de venta y alertas.
 """
-from models.producto_model import ProductoModel, MovimientoModel
+from models.producto_model import ProductoModel
 from models.venta_model import VentaModel
 from utils import logger
-from utils.email_service import send_low_stock_alert
+from utils.api_client import ApiError
 from utils.pdf_generator import reporte_ventas
 
 
@@ -76,60 +76,20 @@ class CarritoController:
 
     def finalizar(self, usuario: dict) -> tuple[bool, str, float]:
         """
-        Registra la venta, descuenta stock y envía alertas.
-        Retorna (exito, mensaje, total).
+        Envía la venta a la API. El SERVIDOR valida el stock, calcula precios,
+        descuento e IVA, descuenta el stock y registra los movimientos,
+        todo en una sola transacción. Retorna (exito, mensaje, total).
         """
         if self.esta_vacio():
             return False, "El carrito está vacío.", 0.0
 
-        totales  = self.calcular_totales()
-        desc_pct = totales["desc_pct"]
-        total    = totales["total"]
-
-        productos_bajo_stock = []
-
-        for item in self.items:
-            item_total = item["precio"] * item["cantidad"] * (1 - desc_pct / 100) * (1 + IVA_PCT / 100)
-            VentaModel.create(
-                item["producto_id"], item["nombre"], item["cantidad"],
-                item["precio"], desc_pct, IVA_PCT, item_total, usuario["id"]
-            )
-            ProductoModel.update_stock(item["producto_id"], -item["cantidad"])
-            MovimientoModel.create(
-                item["producto_id"], item["nombre"], "salida",
-                item["cantidad"], "Venta", usuario["id"]
-            )
-            # Revisar stock bajo
-            nuevo_stock = ProductoModel.get_stock(item["producto_id"])
-            if nuevo_stock <= 5:
-                prod_info = ProductoModel.get_by_id(item["producto_id"])
-                if prod_info and prod_info.get("proveedor_id"):
-                    from models.proveedor_model import ProveedorModel
-                    prov = ProveedorModel.get_by_id(prod_info["proveedor_id"])
-                    if prov and prov.get("correo"):
-                        productos_bajo_stock.append({
-                            "proveedor_correo": prov["correo"],
-                            "proveedor_nombre": prov["nombre"],
-                            "codigo": prod_info["codigo"],
-                            "nombre": item["nombre"],
-                            "cantidad": nuevo_stock,
-                        })
-
-        logger.log(usuario["id"], usuario["nombre_completo"],
-                   f"Venta por ${total:,.0f} – {len(self.items)} ítem(s)", "Ventas")
-
-        # Alertas de stock bajo agrupadas por proveedor
-        if productos_bajo_stock:
-            from collections import defaultdict
-            por_prov = defaultdict(list)
-            for p in productos_bajo_stock:
-                por_prov[(p["proveedor_correo"], p["proveedor_nombre"])].append(p)
-            for (correo, nombre), prods in por_prov.items():
-                send_low_stock_alert(correo, nombre, prods)
+        try:
+            res = VentaModel.registrar(self.items)
+        except ApiError as e:
+            return False, e.detail, 0.0
 
         self.vaciar()
-        return True, "Venta registrada exitosamente.", total
-
+        return True, res["mensaje"], float(res["total"])
 
 class VentasController:
 

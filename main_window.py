@@ -352,7 +352,9 @@ class MainApp:
                 "Cierre de sesión",
                 "Auth"
             )
-
+            from utils import api_client
+            api_client.clear_token()
+            
             self.root.destroy()
 
             from views.auth_view import LoginView

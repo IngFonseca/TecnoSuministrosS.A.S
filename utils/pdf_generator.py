@@ -2,9 +2,9 @@
 import os
 from datetime import datetime
 from fpdf import FPDF
+from utils.config import get_reports_dir
 
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "reports")
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+OUTPUT_DIR = get_reports_dir()
 
 AZUL = (26, 58, 92)
 AZUL_CLARO = (232, 240, 254)
@@ -12,6 +12,15 @@ GRIS = (240, 244, 248)
 TEXTO = (51, 51, 51)
 BLANCO = (255, 255, 255)
 
+_REEMPLAZOS = {"–": "-", "—": "-", "“": '"', "”": '"', "‘": "'", "’": "'", "…": "...", "€": "EUR"}
+
+
+def _latin(texto) -> str:
+    """Helvetica solo admite Latin-1: se sustituyen los caracteres que lo rompen."""
+    t = str(texto)
+    for k, v in _REEMPLAZOS.items():
+        t = t.replace(k, v)
+    return t.encode("latin-1", "replace").decode("latin-1")
 
 class ReportePDF(FPDF):
     def __init__(self, titulo: str):
@@ -44,7 +53,7 @@ class ReportePDF(FPDF):
         self.set_text_color(*BLANCO)
         self.set_font("Helvetica", "B", 9)
         for col, ancho in zip(columnas, anchos):
-            self.cell(ancho, 8, col, border=1, fill=True, align="C")
+            self.cell(ancho, 8, _latin(col), border=1, fill=True, align="C")
         self.ln()
         self.set_text_color(*TEXTO)
         self._fila_par = True
@@ -57,7 +66,7 @@ class ReportePDF(FPDF):
             self.set_fill_color(*BLANCO)
         self._fila_par = not self._fila_par
         for val, ancho in zip(valores, anchos):
-            self.cell(ancho, 7, str(val), border=1, fill=True)
+            self.cell(ancho, 7, _latin(val), border=1, fill=True)
         self.ln()
 
     def guardar(self, nombre_archivo: str) -> str:

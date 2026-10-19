@@ -1,56 +1,22 @@
-"""
-MODELO – Venta
-Responsabilidad: acceso a datos de la tabla `ventas`.
-"""
-from utils.db import execute_query
+from utils import api_client as api
 
 
 class VentaModel:
 
     @staticmethod
-    def create(producto_id: int, nombre_producto: str, cantidad: int,
-               precio_unitario: float, descuento: float, iva: float,
-               total: float, usuario_id: int) -> int:
-        return execute_query(
-            "INSERT INTO ventas "
-            "(producto_id, nombre_producto, cantidad, precio_unitario, "
-            "descuento, iva, total, usuario_id) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-            (producto_id, nombre_producto, cantidad, precio_unitario,
-             descuento, iva, total, usuario_id)
-        )
+    def registrar(items: list[dict]) -> dict:
+        """
+        Solo se envía (producto, cantidad): el precio, el descuento y el IVA
+        los calcula el servidor. Devuelve {"mensaje", "subtotal", "descuento_pct", "total"}.
+        """
+        return api.post("/ventas", {
+            "items": [{"producto_id": i["producto_id"], "cantidad": i["cantidad"]} for i in items]
+        })
 
     @staticmethod
     def get_recientes(limite: int = 10) -> list:
-        return execute_query(
-            """
-            SELECT
-                fecha,
-                COALESCE(NULLIF(nombre_producto, ''), 'Venta histórica') AS nombre_producto,
-                cantidad,
-                precio_unitario,
-                descuento,
-                total
-            FROM ventas
-            ORDER BY fecha DESC
-            LIMIT %s
-            """,
-            (limite,),
-            fetch=True
-        )
+        return api.get("/ventas/recientes", {"limite": limite})
 
     @staticmethod
     def get_todas() -> list:
-        return execute_query(
-            "SELECT fecha, nombre_producto, cantidad, precio_unitario, descuento, iva, total "
-            "FROM ventas ORDER BY fecha DESC",
-            fetch=True
-        )
-
-    @staticmethod
-    def count_hoy() -> int:
-        row = execute_query(
-            "SELECT COUNT(*) as c FROM ventas WHERE DATE(fecha)=CURDATE()",
-            fetch=True
-        )
-        return row[0]["c"]
+        return api.get("/ventas/todas")

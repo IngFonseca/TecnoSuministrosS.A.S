@@ -1,9 +1,6 @@
-"""
-CONTROLADOR – Proveedores
-Responsabilidad: lógica de negocio CRUD de proveedores.
-"""
 from models.proveedor_model import ProveedorModel
 from utils import logger
+from utils.api_client import ApiError
 from utils.pdf_generator import reporte_proveedores
 
 
@@ -23,9 +20,10 @@ class ProveedoresController:
         nombre = nombre.strip()
         if not nombre:
             return False, "El nombre es obligatorio."
-        ProveedorModel.create(nombre, telefono.strip(), correo.strip(), tipo.strip())
-        logger.log(usuario["id"], usuario["nombre_completo"],
-                   f"Registró proveedor: {nombre}", "Proveedores")
+        try:
+            ProveedorModel.create(nombre, telefono.strip(), correo.strip(), tipo.strip())
+        except ApiError as e:
+            return False, e.detail
         return True, "Proveedor registrado."
 
     @staticmethod
@@ -34,16 +32,15 @@ class ProveedoresController:
         nombre = nombre.strip()
         if not nombre:
             return False, "El nombre es obligatorio."
-        ProveedorModel.update(proveedor_id, nombre, telefono.strip(), correo.strip(), tipo.strip())
-        logger.log(usuario["id"], usuario["nombre_completo"],
-                   f"Editó proveedor: {nombre}", "Proveedores")
+        try:
+            ProveedorModel.update(proveedor_id, nombre, telefono.strip(), correo.strip(), tipo.strip())
+        except ApiError as e:
+            return False, e.detail
         return True, "Proveedor actualizado."
 
     @staticmethod
     def eliminar(proveedor_id: int, nombre: str, usuario: dict) -> None:
         ProveedorModel.delete(proveedor_id)
-        logger.log(usuario["id"], usuario["nombre_completo"],
-                   f"Eliminó proveedor: {nombre}", "Proveedores")
 
     @staticmethod
     def exportar_pdf(usuario: dict) -> str:
