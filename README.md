@@ -2,21 +2,26 @@
 
 Aplicación de escritorio para la gestión integral de inventario, ventas, proveedores y trabajadores de TecnoSuministros S.A.S. El sistema permite administrar productos y existencias, registrar ventas, controlar movimientos de stock, gestionar proveedores y usuarios, generar reportes en PDF y manejar diferentes roles de acceso.
 
-El proyecto está construido siguiendo el patrón **MVC (Modelo - Vista - Controlador)**, separando la interfaz gráfica, la lógica de negocio y el acceso a los datos para facilitar su mantenimiento y futuras extensiones.
+El proyecto está construido siguiendo el patrón MVC (Modelo - Vista - Controlador) y se conecta a una API REST propia ([tecnosuministros-api](https://github.com/IngFonseca/tecnosuministros-api)), que es el único componente con acceso a la base de datos.
 
 ## Descripción
 
 TecnoSuministros S.A.S. es un sistema de gestión empresarial desarrollado para centralizar y facilitar las operaciones relacionadas con el inventario y las ventas.
 
-La aplicación permite administrar productos, categorías, proveedores, usuarios y ventas desde una interfaz gráfica desarrollada con **Tkinter**. También incorpora un sistema de autenticación y autorización basado en roles, control de movimientos de inventario, generación de reportes en formato PDF y registro de las actividades realizadas por los usuarios.
+La aplicación permite administrar productos, categorías, proveedores, usuarios y ventas desde una interfaz gráfica desarrollada con Tkinter. También incorpora un sistema de autenticación y autorización basado en roles, control de movimientos de inventario, generación de reportes en formato PDF y registro de las actividades realizadas por los usuarios.
 
-El sistema utiliza **MySQL** como sistema de gestión de base de datos y **bcrypt** para proteger las contraseñas almacenadas.
+La aplicación **no se conecta directamente a la base de datos**: se comunica con la API mediante HTTPS usando un token de sesión. Las credenciales de la base de datos y del correo viven únicamente en el servidor, por lo que el ejecutable puede compartirse sin exponerlas. Las contraseñas se cifran con bcrypt en el servidor.
 
-El proyecto sigue una arquitectura **MVC**, donde:
+```text
+App de escritorio ──HTTPS + token──► API (FastAPI) ──► MySQL
+   (este proyecto)                  (tecnosuministros-api)
+```
 
-- **Modelo:** gestiona las entidades y el acceso a la base de datos.
+El proyecto sigue una arquitectura MVC, donde:
+
+- **Modelo:** gestiona las entidades y se comunica con la API para obtener y guardar datos.
 - **Vista:** proporciona la interfaz gráfica desarrollada con Tkinter.
-- **Controlador:** contiene la lógica de negocio y coordina la comunicación entre las vistas y los modelos.
+- **Controlador:** contiene las validaciones y coordina la comunicación entre las vistas y los modelos.
 
 Esta separación permite mantener el código organizado y facilita futuras modificaciones o ampliaciones del sistema.
 
@@ -24,7 +29,7 @@ Esta separación permite mantener el código organizado y facilita futuras modif
 
 - Sistema de autenticación y registro de usuarios
 - Gestión de usuarios y trabajadores
-- Sistema de roles y permisos
+- Sistema de roles y permisos (verificados en el servidor)
 - Gestión completa de productos
 - Gestión de categorías
 - Control de inventario y existencias
@@ -38,17 +43,18 @@ Esta separación permite mantener el código organizado y facilita futuras modif
 - Dashboard con métricas generales del sistema
 - Registro de actividad de los usuarios
 - Generación de reportes en formato PDF
-- Envío de correos electrónicos automáticos
-- Contraseñas protegidas mediante `bcrypt`
+- Envío de correos electrónicos automáticos (desde la API)
+- Sesiones con token y contraseñas protegidas mediante bcrypt
+- Ejecutable para Windows sin credenciales incluidas
 - Arquitectura MVC para facilitar el mantenimiento y escalabilidad
 
 ## Arquitectura MVC
 
-El sistema implementa el patrón **Modelo - Vista - Controlador (MVC)** para separar las responsabilidades de cada componente.
+El sistema implementa el patrón Modelo - Vista - Controlador (MVC) para separar las responsabilidades de cada componente.
 
 ### Modelo
 
-La capa de modelo se encarga de representar las entidades del sistema y realizar las operaciones directamente relacionadas con la base de datos.
+La capa de modelo se encarga de representar las entidades del sistema y de comunicarse con la API para consultar y guardar la información.
 
 Incluye:
 
@@ -59,11 +65,11 @@ Incluye:
 - Gestión de proveedores
 - Gestión de movimientos de inventario
 
-Los modelos trabajan con MySQL y no contienen lógica relacionada con la interfaz gráfica.
+Los modelos realizan peticiones HTTP a la API mediante `utils/api_client.py`. No acceden a la base de datos ni contienen lógica relacionada con la interfaz gráfica.
 
 ### Vista
 
-La capa de vista proporciona la interfaz gráfica de la aplicación utilizando **Tkinter**.
+La capa de vista proporciona la interfaz gráfica de la aplicación utilizando Tkinter.
 
 Incluye:
 
@@ -75,11 +81,11 @@ Incluye:
 - Trabajadores
 - Reportes
 
-Las vistas no acceden directamente a la base de datos. Se comunican con los controladores para ejecutar las operaciones necesarias.
+Las vistas no se comunican con la API directamente. Se comunican con los controladores para ejecutar las operaciones necesarias.
 
 ### Controlador
 
-La capa de controlador contiene la lógica de negocio del sistema y coordina la comunicación entre las vistas y los modelos.
+La capa de controlador contiene las validaciones de formulario y coordina la comunicación entre las vistas y los modelos.
 
 Incluye controladores para:
 
@@ -91,7 +97,7 @@ Incluye controladores para:
 - Trabajadores
 - Reportes
 
-Los controladores validan la información, aplican las reglas de negocio y solicitan al modelo las operaciones necesarias.
+Los controladores validan la información, manejan los errores devueltos por la API y solicitan al modelo las operaciones necesarias. Las reglas de negocio críticas (precios, descuentos, stock y permisos) se aplican en el servidor.
 
 ## Roles y Permisos
 
@@ -151,128 +157,147 @@ El usuario de bodega está orientado al control físico del inventario.
 | Trabajadores | ✅ | ✅ | ❌ | ❌ |
 | Asignar roles | ✅ | ❌ | ❌ | ❌ |
 
+Estos permisos los verifica la API en cada petición. Ocultar un botón en la interfaz no es la única barrera de seguridad.
+
 ## Reglas de Negocio
 
 ### Ventas
 
 - Se valida la disponibilidad de stock antes de agregar productos al carrito.
-- Se vuelve a validar el stock al finalizar una venta.
-- Se aplica un descuento automático del **5%** cuando la venta supera las 10 unidades totales.
-- Se aplica un **IVA del 19%** sobre el subtotal después del descuento.
+- El stock se valida nuevamente en el servidor al finalizar la venta.
+- Se aplica un descuento automático del 5% cuando la venta supera las 10 unidades totales.
+- Se aplica un IVA del 19% sobre el subtotal después del descuento.
+- La aplicación solo envía qué producto y cuántas unidades se venden. Los precios, el descuento y el IVA los calcula el servidor con los datos de la base.
+- Cada venta se registra en una única transacción: o se guarda completa (venta, stock y movimientos) o no se guarda nada.
 
 ### Inventario
 
 - Las entradas y salidas de productos quedan registradas.
 - Los movimientos de stock almacenan información sobre el producto, cantidad, motivo y usuario responsable.
-- Cuando una venta deja el stock de un producto en **5 unidades o menos**, se genera una alerta al proveedor correspondiente.
+- Cuando una venta deja el stock de un producto en 5 unidades o menos, la API genera una alerta al proveedor correspondiente.
 
 ### Usuarios
 
 - Solo el gerente puede asignar o modificar roles.
+- Las cuentas nuevas quedan sin rol y no pueden ingresar hasta que el gerente les asigne uno.
 - Un usuario no puede eliminar su propia cuenta.
-- Las contraseñas se almacenan utilizando `bcrypt`.
+- Las contraseñas se almacenan utilizando bcrypt.
 - Las actividades realizadas por los usuarios quedan registradas en el sistema.
 
 ## Tecnologías
 
-- **Lenguaje:** Python 3.10+
-- **Interfaz gráfica:** Tkinter
-- **Base de datos:** MySQL
-- **Conector de base de datos:** `mysql-connector-python`
-- **Seguridad de contraseñas:** `bcrypt`
-- **Generación de PDF:** `fpdf2`
-- **Variables de entorno:** `python-dotenv`
-- **Procesamiento de imágenes:** `Pillow`
-- **Arquitectura:** MVC (Modelo - Vista - Controlador)
+- Lenguaje: Python 3.10+
+- Interfaz gráfica: Tkinter
+- Comunicación con la API: requests
+- Generación de PDF: fpdf2
+- Procesamiento de imágenes: Pillow
+- Empaquetado: PyInstaller
+- Servidor: API REST con FastAPI (repositorio [tecnosuministros-api](https://github.com/IngFonseca/tecnosuministros-api))
+- Base de datos: MySQL (accedida únicamente desde la API)
+- Arquitectura: MVC (Modelo - Vista - Controlador)
 
 ## Requisitos
 
+### Usuario final
+
+- Windows
+- Conexión a internet
+
+### Desarrollador
+
 - Python >= 3.10
-- MySQL Server
 - pip
-- Cuenta de correo Gmail para las funciones de envío de correos
-- Gmail App Password para la autenticación del servicio de correo
+- Una API de TecnoSuministros en funcionamiento (local o desplegada). Consulta el repositorio [tecnosuministros-api](https://github.com/IngFonseca/tecnosuministros-api).
 
 ## Instalación
 
-1. Clona el repositorio:
+### Uso rápido (usuarios finales)
 
-   ```bash
-   git clone https://github.com/TU_USUARIO/tecnosuministros-mvc.git
-   cd tecnosuministros-mvc
-   ```
+La base de datos y la API ya están desplegadas en la nube, por lo que no es necesario instalar Python ni MySQL.
 
-2. Crea y activa un entorno virtual:
+1. Descarga `TecnoSuministros.exe` desde la sección [Releases](https://github.com/IngFonseca/TecnoSuministrosS.A.S/releases) del repositorio.
+2. Haz doble clic en el archivo.
+3. Inicia sesión con las credenciales de prueba proporcionadas por el autor.
 
-   En Windows:
+Notas:
 
-   ```bash
-   python -m venv .venv
-   .venv\Scripts\activate
-   ```
+- La primera vez puede tardar hasta un minuto en conectar, porque el servidor gratuito se "duerme" cuando no se usa.
+- Windows puede mostrar el aviso "Windows protegió su PC", porque el ejecutable no tiene firma digital. Pulsa **Más información → Ejecutar de todos modos**.
+- Todos los usuarios comparten la misma base de datos. Los datos son de demostración.
+- Los reportes PDF se guardan en `Documentos\TecnoSuministros\reports`.
 
-   En Linux / macOS:
+### Instalación para desarrolladores
 
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   ```
+Clona el repositorio:
 
-3. Instala las dependencias:
+```bash
+git clone https://github.com/IngFonseca/TecnoSuministrosS.A.S.git
+cd TecnoSuministrosS.A.S
+```
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+Crea y activa un entorno virtual:
 
-4. Crea el archivo `.env` a partir de `.env.example`:
+En Windows:
 
-   En Windows:
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+```
 
-   ```bash
-   copy .env.example .env
-   ```
+En Linux / macOS:
 
-   En Linux / macOS:
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
 
-   ```bash
-   cp .env.example .env
-   ```
+Instala las dependencias:
 
-5. Configura el archivo `.env` con las credenciales de tu base de datos MySQL y tu cuenta de correo:
+```bash
+pip install -r requirements.txt
+```
 
-   ```env
-   DB_HOST=localhost
-   DB_PORT=3306
-   DB_NAME=tecnosuministros
-   DB_USER=root
-   DB_PASSWORD=TU_PASSWORD
+Indica la dirección de la API. La aplicación la busca en este orden:
 
-   EMAIL_HOST=smtp.gmail.com
-   EMAIL_PORT=587
-   EMAIL_USER=TU_CORREO
-   EMAIL_PASSWORD=TU_APP_PASSWORD
-   EMAIL_FROM_NAME=TecnoSuministros S.A.S.
-   ```
+1. Variable de entorno `TECNO_API_URL`
+2. Archivo `api_url.txt` junto al programa
+3. Valor `DEFAULT_API_URL` en `utils/config.py`
 
-   **Importante:** el archivo `.env` contiene información sensible y no debe subirse a GitHub. El proyecto incluye `.env.example` como plantilla.
+En Windows:
 
-6. Inicializa la base de datos:
+```bash
+set TECNO_API_URL=http://127.0.0.1:8000
+```
 
-   ```bash
-   python setup_db.py
-   ```
+En Linux / macOS:
 
-   Este proceso configura la base de datos y crea el gerente inicial.
+```bash
+export TECNO_API_URL=http://127.0.0.1:8000
+```
 
-7. Ejecuta la aplicación:
+Ejecuta la aplicación:
 
-   ```bash
-   python main.py
-   ```
+```bash
+python main.py
+```
+
+La dirección de la API no es un secreto. La aplicación no contiene contraseñas de base de datos ni de correo.
+
+### Generar el ejecutable
+
+1. Edita `utils/config.py` y escribe la URL de tu API en `DEFAULT_API_URL`.
+2. Instala PyInstaller y genera el ejecutable:
+
+```bash
+pip install pyinstaller
+pyinstaller --onefile --windowed --name TecnoSuministros main.py
+```
+
+El resultado queda en `dist/TecnoSuministros.exe`. Los archivos `dist/` y `build/` no se suben al repositorio. El ejecutable se publica en la sección Releases.
 
 ## Uso
 
-Ejecuta la aplicación desde la raíz del proyecto:
+Ejecuta la aplicación con el ejecutable, o desde la raíz del proyecto:
 
 ```bash
 python main.py
@@ -292,27 +317,27 @@ Dependiendo del rol, el usuario puede acceder a diferentes módulos desde el men
 
 Permite:
 
-1. Consultar productos.
-2. Registrar productos.
-3. Actualizar productos.
-4. Administrar categorías.
-5. Controlar existencias.
-6. Registrar entradas de stock.
-7. Registrar salidas de stock.
-8. Consultar movimientos de inventario.
+- Consultar productos.
+- Registrar productos.
+- Actualizar productos.
+- Administrar categorías.
+- Controlar existencias.
+- Registrar entradas de stock.
+- Registrar salidas de stock.
+- Consultar movimientos de inventario.
 
 ### Gestión de Ventas
 
 El módulo de ventas permite:
 
-1. Consultar productos disponibles.
-2. Agregar productos al carrito.
-3. Modificar cantidades.
-4. Validar disponibilidad.
-5. Aplicar descuentos automáticamente.
-6. Calcular el IVA.
-7. Finalizar la venta.
-8. Consultar el historial de ventas.
+- Consultar productos disponibles.
+- Agregar productos al carrito.
+- Modificar cantidades.
+- Validar disponibilidad.
+- Aplicar descuentos automáticamente.
+- Calcular el IVA.
+- Finalizar la venta.
+- Consultar el historial de ventas.
 
 ### Gestión de Proveedores
 
@@ -384,7 +409,7 @@ Todos los reportes cuentan con encabezado institucional y fecha de generación.
 
 ## Correos Automáticos
 
-El sistema permite enviar notificaciones mediante correo electrónico para diferentes eventos:
+El envío de correos lo realiza la API, no la aplicación de escritorio. Se envían notificaciones para los siguientes eventos:
 
 | Evento | Destinatario |
 |---|---|
@@ -393,31 +418,29 @@ El sistema permite enviar notificaciones mediante correo electrónico para difer
 | Asignación inicial de rol | Usuario |
 | Venta con stock ≤ 5 unidades | Proveedor |
 
-Para utilizar esta funcionalidad se deben configurar correctamente las variables de correo en el archivo `.env`.
+Para utilizar esta funcionalidad se deben configurar las variables de correo en el servidor. Consulta el repositorio [tecnosuministros-api](https://github.com/IngFonseca/tecnosuministros-api).
 
 ## Estructura del Proyecto
 
 ```text
-tecnosuministros_mvc/
+TecnoSuministrosS.A.S/
 │
 ├── main.py                              # Punto de entrada de la aplicación
 ├── main_window.py                       # Ventana principal y navegación
-├── setup_db.py                          # Inicialización de la base de datos
 ├── requirements.txt                     # Dependencias del proyecto
-├── .env.example                         # Plantilla de variables de entorno
-├── .gitignore                            # Archivos excluidos de Git
+├── .gitignore                           # Archivos excluidos de Git
 │
 ├── models/                              # MODELO
-│   ├── usuario_model.py                 # CRUD de usuarios y hashing
-│   ├── producto_model.py                # Productos, categorías y movimientos
-│   ├── venta_model.py                   # Gestión de ventas
-│   └── proveedor_model.py               # Gestión de proveedores
+│   ├── usuario_model.py                 # Usuarios (login, registro y gestión) vía API
+│   ├── producto_model.py                # Productos, categorías y movimientos vía API
+│   ├── venta_model.py                   # Ventas vía API
+│   └── proveedor_model.py               # Proveedores vía API
 │
 ├── controllers/                         # CONTROLADOR
 │   ├── auth_controller.py               # Login, registro y validaciones
 │   ├── dashboard_controller.py          # Métricas del sistema
 │   ├── inventario_controller.py         # Lógica de inventario y stock
-│   ├── ventas_controller.py             # Carrito, cálculos y ventas
+│   ├── ventas_controller.py             # Carrito, vista previa de totales y ventas
 │   ├── proveedores_controller.py        # Gestión de proveedores
 │   ├── trabajadores_controller.py       # Usuarios y roles
 │   └── reportes_controller.py           # Generación de reportes
@@ -432,37 +455,37 @@ tecnosuministros_mvc/
 │   └── reportes_view.py                 # Generación de reportes
 │
 ├── utils/                               # UTILIDADES
-│   ├── db.py                            # Conexión con MySQL
-│   ├── email_service.py                 # Servicio de correo
-│   ├── logger.py                        # Registro de actividades
+│   ├── api_client.py                    # Cliente HTTP de la API y token de sesión
+│   ├── config.py                        # Dirección de la API y carpeta de reportes
+│   ├── logger.py                        # Registro de eventos del cliente
 │   ├── pdf_generator.py                 # Generación de PDF
 │   └── theme.py                         # Tema y estilos de la aplicación
 │
-└── reports/                             # Reportes PDF generados
+└── reports/                             # Reportes PDF generados (modo desarrollo)
 ```
 
 ## Seguridad
 
 El sistema incorpora diferentes mecanismos de seguridad:
 
-- Contraseñas protegidas mediante **bcrypt**.
+- La aplicación no contiene credenciales de base de datos ni de correo.
+- Contraseñas protegidas mediante bcrypt (en el servidor).
 - Las contraseñas nunca se almacenan en texto plano.
-- Las credenciales se manejan mediante variables de entorno.
-- El archivo `.env` está incluido en `.gitignore`.
+- Sesiones con token que expira automáticamente.
+- El token de sesión se guarda solo en memoria y se elimina al cerrar sesión.
+- Bloqueo temporal tras varios intentos fallidos de inicio de sesión.
 - Se registra la actividad realizada por los usuarios.
-- Se implementa control de acceso basado en roles.
+- Control de acceso basado en roles, verificado por el servidor en cada petición.
 - Solo el gerente puede asignar o modificar roles.
 - Un usuario no puede eliminar su propia cuenta.
 
-**Importante:** nunca se deben subir credenciales reales, contraseñas, claves de correo o archivos `.env` al repositorio de GitHub.
+**Importante:** nunca se deben subir credenciales reales, contraseñas, claves de correo o archivos `.env` a GitHub.
 
 ## Datos y Archivos Generados
 
-La carpeta `reports/` almacena los archivos PDF generados por la aplicación.
+En modo desarrollo, la carpeta `reports/` almacena los archivos PDF generados por la aplicación. En el ejecutable, los reportes se guardan en `Documentos\TecnoSuministros\reports`.
 
-Los archivos generados automáticamente pueden excluirse del control de versiones mediante `.gitignore`.
-
-De igual manera, los directorios `__pycache__/` y archivos `.pyc` son generados automáticamente por Python y no deben versionarse.
+Los archivos generados automáticamente pueden excluirse del control de versiones mediante `.gitignore`. De igual manera, los directorios `__pycache__/`, `build/`, `dist/` y los archivos `.pyc` o `.spec` son generados automáticamente y no deben versionarse.
 
 ## Roadmap
 
@@ -472,9 +495,8 @@ De igual manera, los directorios `__pycache__/` y archivos `.pyc` son generados 
 - Mejorar el sistema de notificaciones por correo.
 - Incorporar exportación de información a Excel.
 - Ampliar el sistema de auditoría y trazabilidad.
-- Implementar nuevas funcionalidades administrativas.
-- Posible desarrollo de una API REST para complementar la aplicación de escritorio.
-- Posible migración futura a una interfaz web manteniendo la arquitectura MVC.
+- Firmar digitalmente el ejecutable.
+- Posible migración futura a una interfaz web reutilizando la misma API.
 
 ## Autor
 
@@ -488,7 +510,7 @@ Este proyecto no especifica una licencia por el momento.
 
 Para reportar problemas o sugerir mejoras:
 
-- Abre un **Issue en GitHub**.
+- Abre un Issue en GitHub.
 - Describe claramente el problema encontrado.
 - Incluye los pasos necesarios para reproducirlo.
 - Si es posible, proporciona mensajes de error o capturas de pantalla.
